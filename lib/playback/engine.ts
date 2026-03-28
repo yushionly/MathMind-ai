@@ -600,12 +600,53 @@ export class PlaybackEngine {
    * never fires, causing the engine to hang. Chunking avoids this.
    */
   private splitIntoChunks(text: string): string[] {
-    // Split on sentence-ending punctuation (Latin + CJK) and newlines
-    const chunks = text
-      .split(/(?<=[.!?。！？\n])\s*/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    // If splitting produced nothing (no punctuation), return the original text
+    const normalized = text.trim();
+    if (!normalized) return [text];
+
+    const chunks: string[] = [];
+    let start = 0;
+
+    const isAsciiDigit = (char: string | undefined): boolean => {
+      if (!char) return false;
+      return char >= '0' && char <= '9';
+    };
+
+    for (let i = 0; i < normalized.length; i++) {
+      const ch = normalized[i];
+      const prev = normalized[i - 1];
+      const next = normalized[i + 1];
+
+      const isCjkSentenceEnd = ch === '。' || ch === '！' || ch === '？';
+      const isLatinSentenceEnd = ch === '!' || ch === '?';
+      // Keep decimal numbers (e.g. 0.75, 3.14) in a single chunk.
+      const isDecimalPoint = ch === '.' && isAsciiDigit(prev) && isAsciiDigit(next);
+      const isSentencePeriod = ch === '.' && !isDecimalPoint;
+      const isLineBreak = ch === '\n';
+
+      if (!isCjkSentenceEnd && !isLatinSentenceEnd && !isSentencePeriod && !isLineBreak) {
+        continue;
+      }
+
+      const chunk = normalized.slice(start, i + 1).trim();
+      if (chunk.length > 0) {
+        chunks.push(chunk);
+      }
+
+      // Skip spaces/newlines after sentence boundary so next chunk starts cleanly.
+      let nextStart = i + 1;
+      while (nextStart < normalized.length && /\s/u.test(normalized[nextStart])) {
+        nextStart++;
+      }
+      start = nextStart;
+      i = nextStart - 1;
+    }
+
+    const tail = normalized.slice(start).trim();
+    if (tail.length > 0) {
+      chunks.push(tail);
+    }
+
+    // If splitting produced nothing, return the original text.
     return chunks.length > 0 ? chunks : [text];
   }
 

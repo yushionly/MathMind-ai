@@ -1,0 +1,15 @@
+[education]
+mode = "heuristic"
+subject = "math"
+grade_level = "5"
+
+[education.pci]
+concrete_duration_min = 10
+allow_direct_answer = false
+visualization_required = true
+
+[education.widgets]
+enable_desmos = true
+enable_geogebra = true
+enable_word_problem_animator = true
+enable_shape_drag_widget = true

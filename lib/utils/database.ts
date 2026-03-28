@@ -167,6 +167,22 @@ export interface GeneratedAgentRecord {
   createdAt: number;
 }
 
+/**
+ * ConceptFormationMemory table - Student concept formation DNA
+ */
+export interface ConceptFormationRecord {
+  id: string; // PK: `${studentId}:${concept}:${anchor}`
+  studentId: string;
+  concept: string;
+  stage: 'concrete' | 'pictorial' | 'abstract';
+  anchor: string;
+  misconception?: string;
+  generatedExamples?: string[];
+  stageId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** Build the compound primary key for mediaFiles: `${stageId}:${elementId}` */
 export function mediaFileKey(stageId: string, elementId: string): string {
   return `${stageId}:${elementId}`;
@@ -175,7 +191,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 8;
+const _DATABASE_VERSION = 9;
 
 /**
  * MAIC Database Instance
@@ -192,6 +208,7 @@ class MAICDatabase extends Dexie {
   stageOutlines!: EntityTable<StageOutlinesRecord, 'stageId'>;
   mediaFiles!: EntityTable<MediaFileRecord, 'id'>;
   generatedAgents!: EntityTable<GeneratedAgentRecord, 'id'>;
+  conceptFormationMemory!: EntityTable<ConceptFormationRecord, 'id'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -309,6 +326,21 @@ class MAICDatabase extends Dexie {
       mediaFiles: 'id, stageId, [stageId+type]',
       generatedAgents: 'id, stageId',
     });
+
+    // Version 9: Add conceptFormationMemory for long-term concept tracking
+    this.version(9).stores({
+      stages: 'id, updatedAt',
+      scenes: 'id, stageId, order, [stageId+order]',
+      audioFiles: 'id, createdAt',
+      imageFiles: 'id, createdAt',
+      snapshots: '++id',
+      chatSessions: 'id, stageId, [stageId+createdAt]',
+      playbackState: 'stageId',
+      stageOutlines: 'stageId',
+      mediaFiles: 'id, stageId, [stageId+type]',
+      generatedAgents: 'id, stageId',
+      conceptFormationMemory: 'id, studentId, concept, [studentId+concept], stage, updatedAt',
+    });
   }
 }
 
@@ -351,12 +383,14 @@ export async function exportDatabase(): Promise<{
   scenes: SceneRecord[];
   chatSessions: ChatSessionRecord[];
   playbackState: PlaybackStateRecord[];
+  conceptFormationMemory: ConceptFormationRecord[];
 }> {
   return {
     stages: await db.stages.toArray(),
     scenes: await db.scenes.toArray(),
     chatSessions: await db.chatSessions.toArray(),
     playbackState: await db.playbackState.toArray(),
+    conceptFormationMemory: await db.conceptFormationMemory.toArray(),
   };
 }
 
@@ -368,15 +402,18 @@ export async function importDatabase(data: {
   scenes?: SceneRecord[];
   chatSessions?: ChatSessionRecord[];
   playbackState?: PlaybackStateRecord[];
+  conceptFormationMemory?: ConceptFormationRecord[];
 }): Promise<void> {
   await db.transaction(
     'rw',
-    [db.stages, db.scenes, db.chatSessions, db.playbackState],
+    [db.stages, db.scenes, db.chatSessions, db.playbackState, db.conceptFormationMemory],
     async () => {
       if (data.stages) await db.stages.bulkPut(data.stages);
       if (data.scenes) await db.scenes.bulkPut(data.scenes);
       if (data.chatSessions) await db.chatSessions.bulkPut(data.chatSessions);
       if (data.playbackState) await db.playbackState.bulkPut(data.playbackState);
+      if (data.conceptFormationMemory)
+        await db.conceptFormationMemory.bulkPut(data.conceptFormationMemory);
     },
   );
   log.info('Database imported successfully');
@@ -405,6 +442,7 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
       db.stageOutlines,
       db.mediaFiles,
       db.generatedAgents,
+      db.conceptFormationMemory,
     ],
     async () => {
       await db.stages.delete(stageId);
@@ -414,6 +452,7 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
       await db.stageOutlines.delete(stageId);
       await db.mediaFiles.where('stageId').equals(stageId).delete();
       await db.generatedAgents.where('stageId').equals(stageId).delete();
+      await db.conceptFormationMemory.where('stageId').equals(stageId).delete();
     },
   );
 }
@@ -442,5 +481,43 @@ export async function getDatabaseStats() {
     stageOutlines: await db.stageOutlines.count(),
     mediaFiles: await db.mediaFiles.count(),
     generatedAgents: await db.generatedAgents.count(),
+    conceptFormationMemory: await db.conceptFormationMemory.count(),
   };
+}
+
+export async function saveConceptFormationEvent(params: {
+  studentId: string;
+  concept: string;
+  stage: 'concrete' | 'pictorial' | 'abstract';
+  anchor: string;
+  misconception?: string;
+  generatedExamples?: string[];
+  stageId?: string;
+}): Promise<string> {
+  const now = Date.now();
+  const id = `${params.studentId}:${params.concept}:${params.anchor}`;
+  await db.conceptFormationMemory.put({
+    id,
+    studentId: params.studentId,
+    concept: params.concept,
+    stage: params.stage,
+    anchor: params.anchor,
+    ...(params.misconception ? { misconception: params.misconception } : {}),
+    ...(params.generatedExamples ? { generatedExamples: params.generatedExamples } : {}),
+    ...(params.stageId ? { stageId: params.stageId } : {}),
+    createdAt: now,
+    updatedAt: now,
+  });
+  return id;
+}
+
+export async function retrieveRelevantAnchors(
+  studentId: string,
+  _newConcept: string,
+): Promise<string[]> {
+  const records = await db.conceptFormationMemory.where('studentId').equals(studentId).toArray();
+  return records
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 8)
+    .map((r) => r.anchor);
 }

@@ -77,19 +77,25 @@ async function fetchSceneContent(
   },
   signal?: AbortSignal,
 ): Promise<SceneContentResult> {
-  const response = await fetch('/api/generate/scene-content', {
-    method: 'POST',
-    headers: getApiHeaders(),
-    body: JSON.stringify(params),
-    signal,
-  });
+  try {
+    const response = await fetch('/api/generate/scene-content', {
+      method: 'POST',
+      headers: getApiHeaders(),
+      body: JSON.stringify(params),
+      signal,
+    });
 
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({ error: 'Request failed' }));
-    return { success: false, error: data.error || `HTTP ${response.status}` };
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({ error: 'Request failed' }));
+      return { success: false, error: data.error || `HTTP ${response.status}` };
+    }
+
+    return response.json();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.warn('fetchSceneContent failed:', message);
+    return { success: false, error: message || 'Failed to fetch scene content' };
   }
-
-  return response.json();
 }
 
 /** Call POST /api/generate/scene-actions (step 2) */
@@ -105,19 +111,25 @@ async function fetchSceneActions(
   },
   signal?: AbortSignal,
 ): Promise<SceneActionsResult> {
-  const response = await fetch('/api/generate/scene-actions', {
-    method: 'POST',
-    headers: getApiHeaders(),
-    body: JSON.stringify(params),
-    signal,
-  });
+  try {
+    const response = await fetch('/api/generate/scene-actions', {
+      method: 'POST',
+      headers: getApiHeaders(),
+      body: JSON.stringify(params),
+      signal,
+    });
 
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({ error: 'Request failed' }));
-    return { success: false, error: data.error || `HTTP ${response.status}` };
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({ error: 'Request failed' }));
+      return { success: false, error: data.error || `HTTP ${response.status}` };
+    }
+
+    return response.json();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.warn('fetchSceneActions failed:', message);
+    return { success: false, error: message || 'Failed to fetch scene actions' };
   }
-
-  return response.json();
 }
 
 /** Generate TTS for one speech action and store in IndexedDB */

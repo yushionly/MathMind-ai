@@ -10,6 +10,12 @@ import { AvatarDisplay } from '@/components/ui/avatar-display';
 import { CircleStop } from 'lucide-react';
 import { InlineActionTag } from './inline-action-tag';
 import { useUserProfileStore } from '@/lib/store/user-profile';
+import { WaterPoolExplorer } from '@/components/math-explorers/water-pool-explorer';
+import { DesmosGraphExplorer } from '@/components/math-explorers/desmos-graph-explorer';
+import { GeoGebraGeometryExplorer } from '@/components/math-explorers/geogebra-geometry-explorer';
+import { WordProblemAnimator } from '@/components/math-explorers/word-problem-animator';
+import { ShapeDragWidget } from '@/components/math-explorers/shape-drag-widget';
+import { extractMathWidgetInvocations } from '@/lib/math/widgets/protocol';
 
 /** Extended message part type covering standard + custom action parts */
 interface MessagePart {
@@ -116,24 +122,73 @@ const MessageBubble = memo(function MessageBubble({
             : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-900 dark:text-indigo-200 border border-indigo-100/50 dark:border-indigo-800/50 rounded-tl-sm',
       )}
     >
-      <span className="break-words">
+      <div className="break-words">
         {parts.map((part: MessagePart, i: number) => {
           if (part.type === 'text' || part.type === 'step-start') {
             const text = part.type === 'text' ? part.text : '';
             if (!text) return null;
+            const parsed = extractMathWidgetInvocations(text);
+            const normalizedText = parsed.cleanText;
 
             const isLast = i === lastTextIdx;
 
             return (
-              <span key={`${message.id}-${i}`}>
-                {text}
+              <div key={`${message.id}-${i}`}>
+                {normalizedText ? <span>{normalizedText}</span> : null}
                 {isLive && isLast && (
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-current opacity-50 animate-pulse ml-1 align-middle" />
                 )}
                 {message.metadata?.interrupted && isLast && !isLive && (
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 ml-1 align-middle" />
                 )}
-              </span>
+                {parsed.invocations.map((invocation, widgetIndex) => {
+                  if (invocation.type === 'water-pool-explorer') {
+                    return (
+                      <div key={`${message.id}-${i}-widget-${widgetIndex}`} className="mt-2 max-w-full">
+                        <WaterPoolExplorer />
+                      </div>
+                    );
+                  }
+
+                  if (invocation.type === 'desmos-explorer') {
+                    const initialExpression =
+                      typeof invocation.params?.expression === 'string'
+                        ? invocation.params.expression
+                        : undefined;
+                    return (
+                      <div key={`${message.id}-${i}-widget-${widgetIndex}`} className="mt-2 max-w-full">
+                        <DesmosGraphExplorer initialExpression={initialExpression} />
+                      </div>
+                    );
+                  }
+
+                  if (invocation.type === 'word-problem-animator') {
+                    return (
+                      <div key={`${message.id}-${i}-widget-${widgetIndex}`} className="mt-2 max-w-full">
+                        <WordProblemAnimator initialParams={invocation.params} />
+                      </div>
+                    );
+                  }
+
+                  if (invocation.type === 'geogebra-explorer') {
+                    return (
+                      <div key={`${message.id}-${i}-widget-${widgetIndex}`} className="mt-2 max-w-full">
+                        <GeoGebraGeometryExplorer initialParams={invocation.params} />
+                      </div>
+                    );
+                  }
+
+                  if (invocation.type === 'shape-drag-widget') {
+                    return (
+                      <div key={`${message.id}-${i}-widget-${widgetIndex}`} className="mt-2 max-w-full">
+                        <ShapeDragWidget />
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })}
+              </div>
             );
           }
 
@@ -149,7 +204,7 @@ const MessageBubble = memo(function MessageBubble({
 
           return null;
         })}
-      </span>
+      </div>
     </div>
   );
 });
