@@ -81,6 +81,7 @@ export class PlaybackEngine {
   private browserTTSChunks: string[] = []; // sentence-level chunks for sequential playback
   private browserTTSChunkIndex: number = 0; // current chunk being spoken
   private browserTTSPausedChunks: string[] = []; // remaining chunks saved on pause (for cancel+re-speak)
+  private browserTTSRetryCount: number = 0; // retry transient canceled events
   private speechTimerRemaining: number = 0; // remaining ms (set on pause)
 
   constructor(
@@ -620,7 +621,9 @@ export class PlaybackEngine {
       const isLatinSentenceEnd = ch === '!' || ch === '?';
       // Keep decimal numbers (e.g. 0.75, 3.14) in a single chunk.
       const isDecimalPoint = ch === '.' && isAsciiDigit(prev) && isAsciiDigit(next);
-      const isSentencePeriod = ch === '.' && !isDecimalPoint;
+      // Keep ellipsis together (e.g. "..." or "……") to avoid punctuation-only chunks.
+      const isEllipsisDot = ch === '.' && (prev === '.' || next === '.');
+      const isSentencePeriod = ch === '.' && !isDecimalPoint && !isEllipsisDot;
       const isLineBreak = ch === '\n';
 
       if (!isCjkSentenceEnd && !isLatinSentenceEnd && !isSentencePeriod && !isLineBreak) {
@@ -628,7 +631,9 @@ export class PlaybackEngine {
       }
 
       const chunk = normalized.slice(start, i + 1).trim();
-      if (chunk.length > 0) {
+      // Skip punctuation-only chunks that can trigger TTS interruptions.
+      const hasSpeakableContent = /[\p{L}\p{N}\u4e00-\u9fff]/u.test(chunk);
+      if (chunk.length > 0 && hasSpeakableContent) {
         chunks.push(chunk);
       }
 
@@ -659,6 +664,7 @@ export class PlaybackEngine {
     this.browserTTSChunks = this.splitIntoChunks(speechAction.text);
     this.browserTTSChunkIndex = 0;
     this.browserTTSPausedChunks = [];
+    this.browserTTSRetryCount = 0;
     this.browserTTSActive = true;
     this.playBrowserTTSChunk();
   }
@@ -669,6 +675,7 @@ export class PlaybackEngine {
       // All chunks done
       this.browserTTSActive = false;
       this.browserTTSChunks = [];
+      this.browserTTSRetryCount = 0;
       this.callbacks.onSpeechEnd?.();
       if (this.mode === 'playing') this.processNext();
       return;
@@ -705,6 +712,7 @@ export class PlaybackEngine {
     }
 
     utterance.onend = () => {
+      this.browserTTSRetryCount = 0;
       this.browserTTSChunkIndex++;
       if (this.mode === 'playing') {
         this.playBrowserTTSChunk(); // next chunk
@@ -716,17 +724,36 @@ export class PlaybackEngine {
       if (event.error !== 'canceled') {
         log.warn('Browser TTS chunk error:', event.error);
         // Skip failed chunk, try next
+        this.browserTTSRetryCount = 0;
         this.browserTTSChunkIndex++;
         if (this.mode === 'playing') {
           this.playBrowserTTSChunk();
         }
+        return;
       }
-      // On 'canceled': do nothing — pause handler already saved state
+
+      // Some browsers emit transient canceled events during synthesis; auto-retry.
+      if (this.mode === 'playing' && this.browserTTSActive) {
+        if (this.browserTTSRetryCount < 1) {
+          this.browserTTSRetryCount++;
+          setTimeout(() => {
+            if (this.mode === 'playing' && this.browserTTSActive) {
+              this.playBrowserTTSChunk();
+            }
+          }, 40);
+        } else {
+          this.browserTTSRetryCount = 0;
+          this.browserTTSChunkIndex++;
+          this.playBrowserTTSChunk();
+        }
+      }
     };
 
     // Chrome bug workaround: cancel() before speak() to clear stale synthesis
     // state that can produce garbled/broken audio output.
-    window.speechSynthesis.cancel();
+    if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+      window.speechSynthesis.cancel();
+    }
     window.speechSynthesis.speak(utterance);
   }
 
@@ -772,6 +799,7 @@ export class PlaybackEngine {
       this.browserTTSChunks = [];
       this.browserTTSChunkIndex = 0;
       this.browserTTSPausedChunks = [];
+      this.browserTTSRetryCount = 0;
       window.speechSynthesis?.cancel();
     }
   }

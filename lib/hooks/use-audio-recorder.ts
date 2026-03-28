@@ -130,7 +130,6 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           };
 
           recognition.onerror = (event: { error: string }) => {
-            log.error('Speech recognition error:', event.error);
             let errorMessage = '语音识别失败';
 
             switch (event.error) {
@@ -145,8 +144,16 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
                 }
                 return;
               case 'no-speech':
-                errorMessage = '未检测到语音输入';
-                break;
+                // Expected when user taps mic but doesn't speak — don't treat as error.
+                log.info('Speech recognition ended with no speech input');
+                busyRef.current = false;
+                setIsRecording(false);
+                setRecordingTime(0);
+                if (timerRef.current) {
+                  clearInterval(timerRef.current);
+                  timerRef.current = null;
+                }
+                return;
               case 'audio-capture':
                 errorMessage = '无法访问麦克风';
                 break;
@@ -159,6 +166,8 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
               default:
                 errorMessage = `语音识别错误: ${event.error}`;
             }
+
+            log.error('Speech recognition error:', event.error);
 
             onError?.(errorMessage);
             busyRef.current = false;
