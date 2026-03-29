@@ -42,5 +42,6 @@ The following constraints must be strictly obeyed in all JavaScript logic and vi
 5. Do NOT include KaTeX - it will be injected automatically
 6. All simulations must strictly follow the scientific constraints above
 7. Focus on interactive visualization, minimal text
+8. If the page includes segmented grids/bars with overlay divider lines, compute divider positions from the actual segment boundary coordinates (same container, same coordinate system), and keep alignment error within 1px after value changes and resize
 
 Return the complete HTML document directly.

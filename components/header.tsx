@@ -10,6 +10,8 @@ import {
   Download,
   FileDown,
   Package,
+  RefreshCw,
+  GraduationCap,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
@@ -23,9 +25,21 @@ import { useExportPPTX } from '@/lib/export/use-export-pptx';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
+  readonly isStudentView?: boolean;
+  readonly onToggleStudentView?: () => void;
+  readonly canRegenerateScene?: boolean;
+  readonly isRegeneratingScene?: boolean;
+  readonly onRegenerateScene?: () => void;
 }
 
-export function Header({ currentSceneTitle }: HeaderProps) {
+export function Header({
+  currentSceneTitle,
+  isStudentView = false,
+  onToggleStudentView,
+  canRegenerateScene = false,
+  isRegeneratingScene = false,
+  onRegenerateScene,
+}: HeaderProps) {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
@@ -99,6 +113,49 @@ export function Header({ currentSceneTitle }: HeaderProps) {
         </div>
 
         <div className="flex items-center gap-4 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm shrink-0">
+          {onToggleStudentView && (
+            <>
+              <button
+                onClick={onToggleStudentView}
+                className={cn(
+                  'flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold transition-all hover:shadow-sm',
+                  isStudentView
+                    ? 'text-blue-600 dark:text-blue-400 hover:bg-white dark:hover:bg-gray-700'
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700',
+                )}
+                title={isStudentView ? t('stage.exitStudentMode') : t('stage.enterStudentMode')}
+              >
+                <GraduationCap className="w-3.5 h-3.5" />
+                <span>
+                  {isStudentView ? t('stage.studentModeActive') : t('stage.enterStudentMode')}
+                </span>
+              </button>
+              <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
+            </>
+          )}
+
+          {canRegenerateScene && (
+            <>
+              <button
+                onClick={() => onRegenerateScene?.()}
+                disabled={isRegeneratingScene}
+                title={t('stage.regenerateScene')}
+                className={cn(
+                  'flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold transition-all',
+                  isRegeneratingScene
+                    ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                    : 'text-amber-600 dark:text-amber-400 hover:bg-white dark:hover:bg-gray-700 hover:shadow-sm',
+                )}
+              >
+                <RefreshCw className={cn('w-3.5 h-3.5', isRegeneratingScene && 'animate-spin')} />
+                <span>
+                  {isRegeneratingScene ? t('stage.regeneratingScene') : t('stage.regenerateScene')}
+                </span>
+              </button>
+              <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
+            </>
+          )}
+
           {/* Language Selector */}
           <div className="relative" ref={languageRef}>
             <button

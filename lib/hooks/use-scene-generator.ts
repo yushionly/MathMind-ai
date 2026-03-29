@@ -244,12 +244,21 @@ export interface GenerationParams {
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
   const abortRef = useRef(false);
   const generatingRef = useRef(false);
+  const regeneratingSceneRef = useRef(false);
   const mediaAbortRef = useRef<AbortController | null>(null);
   const fetchAbortRef = useRef<AbortController | null>(null);
   const lastParamsRef = useRef<GenerationParams | null>(null);
   const generateRemainingRef = useRef<((params: GenerationParams) => Promise<void>) | null>(null);
 
   const store = useStageStore;
+
+  const resolveGenerationParams = useCallback(() => {
+    return lastParamsRef.current;
+  }, []);
+
+  const setGenerationParams = useCallback((params: GenerationParams) => {
+    lastParamsRef.current = params;
+  }, []);
 
   const generateRemaining = useCallback(
     async (params: GenerationParams) => {
@@ -543,5 +552,95 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
     [store],
   );
 
-  return { generateRemaining, retrySingleOutline, stop, isGenerating };
+/** Regenerate one existing scene by sceneId (replace content/actions, keep scene id/order). */
+    const regenerateScene = useCallback(
+      async (sceneId: string) => {
+        if (regeneratingSceneRef.current) return;
+        const state = store.getState();
+        const targetScene = state.scenes.find((s) => s.id === sceneId);
+        const params = resolveGenerationParams();
+        if (!targetScene || !state.stage || !params) return;
+        const outline = state.outlines.find((o) => o.order === targetScene.order);
+        if (!outline) {
+          log.warn('regenerateScene skipped: outline not found for order', targetScene.order);
+          return;
+        }
+        regeneratingSceneRef.current = true;
+        store.getState().setGenerationStatus('generating');
+        const abortController = new AbortController();
+        const signal = abortController.signal;
+        try {
+          const contentResult = await fetchSceneContent(
+            {
+              outline,
+              allOutlines: state.outlines,
+              stageId: state.stage.id,
+              pdfImages: params.pdfImages,
+              imageMapping: params.imageMapping,
+              stageInfo: params.stageInfo,
+              agents: params.agents,
+            },
+            signal,
+          );
+          if (!contentResult.success || !contentResult.content) {
+            store.getState().setGenerationStatus('paused');
+            return;
+          }
+          const orderedScenes = [...store.getState().scenes].sort((a, b) => a.order - b.order);
+          const sceneIndex = orderedScenes.findIndex((s) => s.id === sceneId);
+          const previousScene = sceneIndex > 0 ? orderedScenes[sceneIndex - 1] : null;
+          const previousSpeeches = previousScene
+            ? (previousScene.actions || [])
+                .filter((a): a is SpeechAction => a.type === 'speech')
+                .map((a) => a.text)
+            : [];
+          const actionsResult = await fetchSceneActions(
+            {
+              outline: contentResult.effectiveOutline || outline,
+              allOutlines: state.outlines,
+              content: contentResult.content,
+              stageId: state.stage.id,
+              agents: params.agents,
+              previousSpeeches,
+              userProfile: params.userProfile,
+            },
+            signal,
+          );
+          if (!actionsResult.success || !actionsResult.scene) {
+            store.getState().setGenerationStatus('paused');
+            return;
+          }
+          const settings = useSettingsStore.getState();
+          const regeneratedScene = {
+            ...actionsResult.scene,
+            id: targetScene.id,
+            order: targetScene.order,
+            stageId: targetScene.stageId,
+            updatedAt: Date.now(),
+          };
+
+          if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
+            const ttsResult = await generateTTSForScene(regeneratedScene, signal);
+            if (!ttsResult.success) {
+              store.getState().setGenerationStatus('paused');
+              return;
+            }
+          }
+
+          store.getState().updateScene(targetScene.id, regeneratedScene);
+          store.getState().setGenerationStatus('completed');
+        } catch (err) {
+          if (!(err instanceof DOMException && err.name === 'AbortError')) {
+            log.warn('regenerateScene failed:', err);
+          }
+          store.getState().setGenerationStatus('paused');
+        } finally {
+          regeneratingSceneRef.current = false;
+        }
+      },
+      [resolveGenerationParams, store],
+    );
+
+    
+  return { generateRemaining, setGenerationParams, retrySingleOutline, regenerateScene, stop, isGenerating };
 }

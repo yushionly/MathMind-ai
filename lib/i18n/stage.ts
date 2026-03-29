@@ -1,6 +1,11 @@
 export const stageZhCN = {
   stage: {
     currentScene: '当前场景',
+    enterStudentMode: '学生模式',
+    exitStudentMode: '退出学生模式',
+    studentModeActive: '学生模式中',
+    regenerateScene: '重生成当前场景',
+    regeneratingScene: '正在重生成...',
     generating: '生成中...',
     paused: '已暂停',
     generationFailed: '生成失败',
@@ -150,6 +155,11 @@ export const stageZhCN = {
 export const stageEnUS = {
   stage: {
     currentScene: 'Current Scene',
+    enterStudentMode: 'Student Mode',
+    exitStudentMode: 'Exit Student Mode',
+    studentModeActive: 'Student Mode On',
+    regenerateScene: 'Regenerate Scene',
+    regeneratingScene: 'Regenerating...',
     generating: 'Generating...',
     paused: 'Paused',
     generationFailed: 'Generation failed',

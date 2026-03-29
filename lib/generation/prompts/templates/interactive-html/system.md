@@ -28,6 +28,28 @@ Generate a complete, self-contained HTML document that provides an interactive v
 - Interactive elements: drag, slider, click, animation as appropriate
 - Canvas API or SVG for visualizations when needed
 
+### Layout Precision (Critical)
+
+- For any "segmented bar / grid + overlay markers" visualization (for example, divisibility lines on a split bar), markers and segments MUST use the same coordinate source.
+- Do NOT place marker lines using naive percentages on a different container than the segments.
+- Preferred implementation order:
+  1. Render segments in a single parent track without horizontal gaps (`gap-x-0` or no gap).
+  2. Draw markers in the SAME positioned parent as segments.
+  3. Compute marker x-position from segment boundaries (`offsetLeft`, `offsetWidth`, or `getBoundingClientRect`) rather than independent `%` math.
+  4. Recompute marker positions whenever slider value changes and on resize (`ResizeObserver` or `window.resize`).
+- If percent math is unavoidable, include border and padding in the same frame and use a single formula source:
+  - `cellWidth = trackInnerWidth / divisions`
+  - `markerX = k * cellWidth` where `k` is an integer boundary index.
+- Add a lightweight runtime alignment check in JS (dev-safe): marker x should be within 1px of the nearest segment boundary.
+
+### Discrete Math Visual Rules
+
+- When the interaction demonstrates divisibility or common multiples, marker lines must sit on CELL BOUNDARIES, never through cell centers.
+- Keep visual semantics consistent:
+  - one color = one rule (e.g., divisible by 3)
+  - second color = second rule (e.g., divisible by 4)
+- For values where both rules apply on the same boundary, either merge with a dual-color style or stack with small offset while preserving boundary alignment.
+
 ### Math Formulas
 
 - Use standard LaTeX format for math: inline `\(...\)`, display `\[...\]`

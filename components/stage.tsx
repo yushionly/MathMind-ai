@@ -42,8 +42,16 @@ import { VisuallyHidden } from 'radix-ui';
  */
 export function Stage({
   onRetryOutline,
+  onRegenerateScene,
+  allowSceneRegeneration = true,
+  isStudentView = false,
+  onToggleStudentView,
 }: {
   onRetryOutline?: (outlineId: string) => Promise<void>;
+  onRegenerateScene?: (sceneId: string) => Promise<void>;
+  allowSceneRegeneration?: boolean;
+  isStudentView?: boolean;
+  onToggleStudentView?: () => void;
 }) {
   const { t } = useI18n();
   const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines } =
@@ -51,6 +59,17 @@ export function Stage({
   const failedOutlines = useStageStore.use.failedOutlines();
 
   const currentScene = getCurrentScene();
+  const [isRegeneratingScene, setIsRegeneratingScene] = useState(false);
+  const handleRegenerateCurrentScene = useCallback(async () => {
+    if (!onRegenerateScene || !currentScene || currentScene.id === PENDING_SCENE_ID) return;
+    setIsRegeneratingScene(true);
+    try {
+      await onRegenerateScene(currentScene.id);
+    } finally {
+      setIsRegeneratingScene(false);
+    }
+  }, [onRegenerateScene, currentScene]);
+
 
   // Layout state from settings store (persisted via localStorage)
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
@@ -939,7 +958,21 @@ export function Stage({
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
         {/* Header */}
-        {!isPresenting && <Header currentSceneTitle={currentScene?.title || ''} />}
+        {!isPresenting && (
+          <Header
+            currentSceneTitle={currentScene?.title || ''}
+            isStudentView={isStudentView}
+            onToggleStudentView={onToggleStudentView}
+            canRegenerateScene={
+              allowSceneRegeneration &&
+              !!onRegenerateScene &&
+              !!currentScene &&
+              currentScene.id !== PENDING_SCENE_ID
+            }
+            isRegeneratingScene={isRegeneratingScene}
+            onRegenerateScene={handleRegenerateCurrentScene}
+          />
+        )}
 
         {/* Canvas Area */}
         <div

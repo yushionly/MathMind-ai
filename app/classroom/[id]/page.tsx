@@ -5,7 +5,7 @@ import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { useStageStore } from '@/lib/store';
 import { loadImageMapping } from '@/lib/utils/image-storage';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
@@ -16,8 +16,14 @@ import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 const log = createLogger('Classroom');
 
 export default function ClassroomDetailPage() {
+  const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const classroomId = params?.id as string;
+  const roleParam = searchParams?.get('role');
+  const studentParam = searchParams?.get('student');
+  const isStudentView = roleParam === 'student' || studentParam === '1';
 
   const { loadFromStorage } = useStageStore();
 
@@ -26,7 +32,7 @@ export default function ClassroomDetailPage() {
 
   const generationStartedRef = useRef(false);
 
-  const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
+  const { generateRemaining, setGenerationParams, retrySingleOutline, regenerateScene, stop } = useSceneGenerator({
     onComplete: () => {
       log.info('[Classroom] All scenes generated');
     },
@@ -95,6 +101,20 @@ export default function ClassroomDetailPage() {
     }
   }, [classroomId, loadFromStorage]);
 
+  const handleToggleStudentView = useCallback(() => {
+    const params = new URLSearchParams(searchParams?.toString() || '');
+
+    if (isStudentView) {
+      params.delete('role');
+      params.delete('student');
+    } else {
+      params.set('role', 'student');
+    }
+
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }, [isStudentView, pathname, router, searchParams]);
+
   useEffect(() => {
     // Reset loading state on course switch to unmount Stage during transition,
     // preventing stale data from syncing back to the new course
@@ -158,6 +178,28 @@ export default function ClassroomDetailPage() {
         });
       });
     } else if (outlines.length > 0 && stage) {
+      // Setup params for potential regeneration even if no pending scenes
+      const genParamsStr = sessionStorage.getItem('generationParams');
+      const params = genParamsStr ? JSON.parse(genParamsStr) : {};
+      const storageIds = (params.pdfImages || [])
+        .map((img: { storageId?: string }) => img.storageId)
+        .filter(Boolean);
+
+      loadImageMapping(storageIds).then((imageMapping) => {
+        setGenerationParams({
+          pdfImages: params.pdfImages,
+          imageMapping,
+          stageInfo: {
+            name: stage.name || '',
+            description: stage.description,
+            language: stage.language,
+            style: stage.style,
+          },
+          agents: params.agents,
+          userProfile: params.userProfile,
+        });
+      });
+
       // All scenes are generated, but some media may not have finished.
       // Resume media generation for any tasks not yet in IndexedDB.
       // generateMediaForOutlines skips already-completed tasks automatically.
@@ -166,7 +208,7 @@ export default function ClassroomDetailPage() {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }
-  }, [loading, error, generateRemaining]);
+  }, [loading, error, generateRemaining, setGenerationParams]);
 
   return (
     <ThemeProvider>
@@ -195,7 +237,13 @@ export default function ClassroomDetailPage() {
               </div>
             </div>
           ) : (
-            <Stage onRetryOutline={retrySingleOutline} />
+            <Stage
+              onRetryOutline={isStudentView ? undefined : retrySingleOutline}
+              onRegenerateScene={isStudentView ? undefined : regenerateScene}
+              allowSceneRegeneration={!isStudentView}
+              isStudentView={isStudentView}
+              onToggleStudentView={handleToggleStudentView}
+            />
           )}
         </div>
       </MediaStageProvider>
