@@ -46,6 +46,7 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { useAuthStore } from '@/lib/store/auth';
 
 const log = createLogger('Home');
 
@@ -84,6 +85,51 @@ function HomePage() {
   // Model setup state
   const currentModelId = useSettingsStore((s) => s.modelId);
   const [recentOpen, setRecentOpen] = useState(true);
+
+  // Auth Store
+  const { role, isLoggedIn, login, logout, setRole, register } = useAuthStore();
+  const [authHydrated, setAuthHydrated] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [registerNickname, setRegisterNickname] = useState('');
+  const [registerGrade, setRegisterGrade] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  useEffect(() => setAuthHydrated(true), []);
+
+  const closeAuthModal = () => {
+    setShowLoginModal(false);
+    setAuthError('');
+    setLoginUsername('');
+    setLoginPassword('');
+    setConfirmPassword('');
+    setRegisterNickname('');
+    setRegisterGrade('');
+  };
+
+  const handleAuthSubmit = () => {
+    setAuthError('');
+    try {
+      if (authMode === 'login') {
+        login(loginUsername, loginPassword);
+      } else {
+        if (loginPassword !== confirmPassword) {
+          throw new Error('两次输入的密码不一致');
+        }
+        if (loginPassword.length < 6) {
+          throw new Error('密码长度不能少于6位');
+        }
+        register(loginUsername, loginPassword, registerNickname, registerGrade, 'student');
+      }
+      closeAuthModal();
+    } catch (err: any) {
+      setAuthError(err.message);
+    }
+  };
 
   // Hydrate client-only state after mount (avoids SSR mismatch)
   /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
@@ -312,20 +358,124 @@ function HomePage() {
 
   const canGenerate = !!form.requirement.trim();
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault();
-      if (canGenerate) handleGenerate();
-    }
-  };
+  const displayClassrooms =
+    authHydrated && role === 'student' && !isLoggedIn ? classrooms.slice(0, 2) : classrooms;
 
   return (
     <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
+
+      {/* Auth UI Modal */}
+      <AnimatePresence>
+        {showLoginModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl w-80 flex flex-col gap-4">
+              <h2 className="text-xl font-bold">{authMode === 'login' ? '学生登录' : '学生注册'}</h2>
+              {authError && <div className="text-red-500 text-sm">{authError}</div>}
+              <input
+                type="text"
+                placeholder="请输入学号/用户名"
+                className="border p-2 rounded w-full dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                value={loginUsername}
+                onChange={e => setLoginUsername(e.target.value)}
+              />
+              <input
+                type="password"
+                placeholder="请输入密码"
+                className="border p-2 rounded w-full dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                value={loginPassword}
+                onChange={e => setLoginPassword(e.target.value)}
+              />
+              {authMode === 'register' && (
+                <>
+                  <input
+                    type="password"
+                    placeholder="请确认密码"
+                    className="border p-2 rounded w-full dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                  />
+                  <input
+                    type="text"
+                    placeholder="请输入学生昵称 (课上互动使用)"
+                    className="border p-2 rounded w-full dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    value={registerNickname}
+                    onChange={e => setRegisterNickname(e.target.value)}
+                  />
+                  <select
+                    className="border p-2 rounded w-full dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    value={registerGrade}
+                    onChange={e => setRegisterGrade(e.target.value)}
+                  >
+                    <option value="" disabled>请选择就读年级</option>
+                    <option value="学前">学前班/幼儿园</option>
+                    <option value="一年级">小学一年级</option>
+                    <option value="二年级">小学二年级</option>
+                    <option value="三年级">小学三年级</option>
+                    <option value="四年级">小学四年级</option>
+                    <option value="五年级">小学五年级</option>
+                    <option value="六年级">小学六年级</option>
+                    <option value="初中">初中</option>
+                  </select>
+                </>
+              )}
+              
+              <div className="flex justify-between items-center text-sm">
+                <button 
+                  className="text-violet-600 hover:underline"
+                  onClick={() => {
+                    setAuthMode(authMode === 'login' ? 'register' : 'login');
+                    setAuthError('');
+                  }}
+                >
+                  {authMode === 'login' ? '没有账号？去注册' : '已有账号？去登录'}
+                </button>
+              </div>
+
+              <div className="flex gap-2 justify-end mt-2">
+                <Button variant="ghost" onClick={closeAuthModal}>取消</Button>
+                <Button onClick={handleAuthSubmit}>
+                  {authMode === 'login' ? '登录' : '注册'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ═══ Top-right pill (unchanged) ═══ */}
       <div
         ref={toolbarRef}
         className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
       >
+        {/* Auth Toggle */}
+        {authHydrated && (
+          <div className="flex items-center gap-2 mr-2">
+            {role === 'student' && !isLoggedIn && (
+              <button
+                onClick={() => setShowLoginModal(true)}
+                className="text-xs px-2 py-1 bg-violet-100 dark:bg-violet-900/30 text-violet-600 rounded"
+              >
+                学生登录
+              </button>
+            )}
+            {role === 'student' && isLoggedIn && (
+              <button
+                onClick={() => logout()}
+                className="text-xs px-2 py-1 bg-violet-100 dark:bg-violet-900/30 text-violet-600 rounded"
+              >
+                退出登录 ({useAuthStore.getState().nickname || useAuthStore.getState().username})
+              </button>
+            )}
+            <button
+              onClick={() => setRole(role === 'teacher' ? 'student' : 'teacher')}
+              className="text-xs px-2 py-1 border rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              {role === 'teacher' ? '切换为学生' : '切换为教师'}
+            </button>
+          </div>
+        )}
+        <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
+
         {/* Language Selector */}
         <div className="relative">
           <button
@@ -501,12 +651,13 @@ function HomePage() {
         </motion.p>
 
         {/* ── Unified input area ── */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.97 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.35 }}
-          className="w-full"
-        >
+        {authHydrated && role === 'teacher' && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.35 }}
+            className="w-full"
+          >
           <div className="w-full rounded-2xl border border-border/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl shadow-black/[0.03] dark:shadow-black/20 transition-shadow focus-within:shadow-2xl focus-within:shadow-violet-500/[0.06]">
             {/* ── Greeting + Profile + Agents ── */}
             <div className="relative z-20 flex items-start justify-between">
@@ -574,6 +725,22 @@ function HomePage() {
             </div>
           </div>
         </motion.div>
+        )}
+
+        {/* Student Call To Action (Optional) */}
+        {authHydrated && role === 'student' && !isLoggedIn && (
+          <div className="flex flex-col items-center justify-center p-6 bg-white/50 dark:bg-slate-800/50 rounded-2xl backdrop-blur-md">
+            <h2 className="text-xl font-semibold mb-2">未注册学生</h2>
+            <p className="text-muted-foreground/80 mb-4">您可以观看下方的2个示例课程。登录后可访问所有已有课程。</p>
+            <Button onClick={() => setShowLoginModal(true)}>立即登录 / 注册</Button>
+          </div>
+        )}
+        {authHydrated && role === 'student' && isLoggedIn && (
+          <div className="flex flex-col items-center justify-center p-6 bg-white/50 dark:bg-slate-800/50 rounded-2xl backdrop-blur-md">
+            <h2 className="text-xl font-semibold mb-2">欢迎, {useAuthStore.getState().nickname || useAuthStore.getState().username} 同学</h2>
+            <p className="text-muted-foreground/80">您可以从下方选择并进入对应的课程。</p>
+          </div>
+        )}
 
         {/* ── Error ── */}
         <AnimatePresence>
@@ -591,7 +758,7 @@ function HomePage() {
       </motion.div>
 
       {/* ═══ Recent classrooms — collapsible ═══ */}
-      {classrooms.length > 0 && (
+      {displayClassrooms.length > 0 && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -614,8 +781,8 @@ function HomePage() {
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
             <span className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors select-none">
               <Clock className="size-3.5" />
-              {t('classroom.recentClassrooms')}
-              <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
+              {role === 'teacher' ? t('classroom.recentClassrooms') : '课程目录'}
+              <span className="text-[11px] tabular-nums opacity-60">{displayClassrooms.length}</span>
               <motion.div
                 animate={{ rotate: recentOpen ? 180 : 0 }}
                 transition={{ duration: 0.3, ease: 'easeInOut' }}
@@ -637,7 +804,7 @@ function HomePage() {
                 className="w-full overflow-hidden"
               >
                 <div className="pt-8 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8">
-                  {classrooms.map((classroom, i) => (
+                  {displayClassrooms.map((classroom, i) => (
                     <motion.div
                       key={classroom.id}
                       initial={{ opacity: 0, y: 16 }}
